@@ -11,6 +11,7 @@ import hudson.model.Descriptor;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.plugins.build_timeout.operations.AbortOperation;
+import hudson.plugins.build_timeout.operations.FailOperation;
 import hudson.tasks.BuildStep;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.BuildStepMonitor;
@@ -23,12 +24,9 @@ import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 
 
 public class BuildStepWithTimeout extends Builder implements BuildStep {
@@ -42,8 +40,7 @@ public class BuildStepWithTimeout extends Builder implements BuildStep {
         this.buildStep = buildStep;
         if (operationList != null && !operationList.isEmpty()) {
             this.operationList = operationList;
-        }
-        else {
+        } else {
             this.operationList = Collections.emptyList();
         }
 
@@ -69,13 +66,13 @@ public class BuildStepWithTimeout extends Builder implements BuildStep {
     }
 
     @Override
-    public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
-        return perform((Build)build, launcher, listener);
+    public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+        return perform((Build) build, launcher, listener);
     }
 
     @Override
     @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "No adequate replacement for Trigger.timer found")
-    public boolean perform(final Build<?,?> build, final Launcher launcher, final BuildListener listener) throws InterruptedException, IOException {
+    public boolean perform(final Build<?, ?> build, final Launcher launcher, final BuildListener listener) throws InterruptedException, IOException {
         final Timer timer = Trigger.timer; // FIXME TODO replace with Timer
         final long delay = getTimeout(build, listener);
 
@@ -140,7 +137,7 @@ public class BuildStepWithTimeout extends Builder implements BuildStep {
             List<BuildTimeOutStrategyDescriptor> descriptors = Jenkins.getActiveInstance().getDescriptorList(BuildTimeOutStrategy.class);
             List<BuildTimeOutStrategyDescriptor> supportedStrategies = new ArrayList<>(descriptors.size());
 
-            for(BuildTimeOutStrategyDescriptor descriptor : descriptors) {
+            for (BuildTimeOutStrategyDescriptor descriptor : descriptors) {
                 if (descriptor.isApplicableAsBuildStep()) {
                     supportedStrategies.add(descriptor);
                 }
@@ -150,8 +147,8 @@ public class BuildStepWithTimeout extends Builder implements BuildStep {
         }
 
         @SuppressWarnings("unchecked")
-        public List<BuildTimeOutOperationDescriptor> getOperations(AbstractProject<?,?> project) {
-            return BuildTimeOutOperationDescriptor.all((Class<? extends AbstractProject<?, ?>>)project.getClass());
+        public List<BuildTimeOutOperationDescriptor> getOperations(AbstractProject<?, ?> project) {
+            return BuildTimeOutOperationDescriptor.all((Class<? extends AbstractProject<?, ?>>) project.getClass());
         }
 
         public List<BuildTimeOutOperationDescriptor> getOperations() {

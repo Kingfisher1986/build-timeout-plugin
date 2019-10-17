@@ -62,16 +62,16 @@ public class BuildTimeoutWrapper extends BuildWrapper {
      */
     @Deprecated
     public transient boolean writingDescription;
-    
+
     private final List<BuildTimeOutOperation> operationList;
-    
+
     /**
      * @return operations to perform at timeout.
      */
     public List<BuildTimeOutOperation> getOperationList() {
         return operationList;
     }
-    
+
     private static List<BuildTimeOutOperation> createCompatibleOperationList(
             boolean failBuild, boolean writingDescription
     ) {
@@ -79,7 +79,7 @@ public class BuildTimeoutWrapper extends BuildWrapper {
         if (!writingDescription) {
             return Arrays.asList(lastOp);
         }
-        
+
         String msg;
         if (failBuild) {
             msg = Messages.Timeout_Message("{0}", Messages.Timeout_Failed());
@@ -89,14 +89,14 @@ public class BuildTimeoutWrapper extends BuildWrapper {
         BuildTimeOutOperation firstOp = new WriteDescriptionOperation(msg);
         return Arrays.asList(firstOp, lastOp);
     }
-    
+
     @Deprecated
     public BuildTimeoutWrapper(BuildTimeOutStrategy strategy, boolean failBuild, boolean writingDescription) {
         this.strategy = strategy;
         this.operationList = createCompatibleOperationList(failBuild, writingDescription);
         this.timeoutEnvVar = null;
     }
-    
+
     @Deprecated
     public BuildTimeoutWrapper(BuildTimeOutStrategy strategy, List<BuildTimeOutOperation> operationList) {
         this.strategy = strategy;
@@ -106,10 +106,10 @@ public class BuildTimeoutWrapper extends BuildWrapper {
 
     /**
      * ctor.
-     * 
+     *
      * Don't forget to update {@link DescriptorImpl#newInstance(StaplerRequest, JSONObject)}
      * when you add new arguments.
-     * 
+     *
      */
     @DataBoundConstructor
     public BuildTimeoutWrapper(BuildTimeOutStrategy strategy, List<BuildTimeOutOperation> operationList, String timeoutEnvVar) {
@@ -117,90 +117,87 @@ public class BuildTimeoutWrapper extends BuildWrapper {
         this.operationList = (operationList != null)?operationList:Collections.<BuildTimeOutOperation>emptyList();
         this.timeoutEnvVar = Util.fixEmptyAndTrim(timeoutEnvVar);
     }
-    
+
     public class EnvironmentImpl extends Environment {
-            private final AbstractBuild<?,?> build;
-            private final BuildListener listener;
-            
-            //Did some operation fail?
-            protected boolean operationFailed = false;
-            
-            final class TimeoutTimerTask extends SafeTimerTask {
-                public void doRun() {
-                    synchronized(EnvironmentImpl.this) {
-                        EnvironmentImpl.this.task = null;   // mark timer is not active.
-                    }
-                    List<BuildTimeOutOperation> opList = getOperationList();
-                    if (opList == null || opList.isEmpty()) {
-                        // defaults to AbortOperation.
-                        opList = Arrays.<BuildTimeOutOperation>asList(new AbortOperation());
-                    }
-                    for( BuildTimeOutOperation op: opList ) {
-                        try {
-                            if (!op.perform(build, listener, effectiveTimeout)) {
-                                operationFailed = true;
-                                break;
-                            }
-                        } catch(RuntimeException e) {
-                            // if some unexpected exception,
-                            // mark the operation failed and pass through the exception.
-                            operationFailed = true;
-                            throw e;
-                        }
+        private final AbstractBuild<?,?> build;
+        private final BuildListener listener;
+
+        //Did some operation fail?
+        protected boolean operationFailed = false;
+
+        final class TimeoutTimerTask extends SafeTimerTask {
+            public void doRun() {
+                synchronized(EnvironmentImpl.this) {
+                    EnvironmentImpl.this.task = null;   // mark timer is not active.
+                }
+                List<BuildTimeOutOperation> opList = getOperationList();
+                if (opList == null || opList.isEmpty()) {
+                    // defaults to AbortOperation.
+                    opList = Arrays.<BuildTimeOutOperation>asList(new AbortOperation());
+                }
+
+                // currently working here, find out how to do this better
+                for( BuildTimeOutOperation op: opList ) {
+                    // reschedule if operation is FailOperation
+                    if (op instanceof FailOperation && op.perform(build, listener, effectiveTimeout)) {
+                        reschedule();
+                    } else {
+                        op.perform(build, listener, effectiveTimeout);
                     }
                 }
             }
+        }
 
-            private TimeoutTimerTask task = null;
-            
-            private final long effectiveTimeout;
-            
-            public EnvironmentImpl(AbstractBuild<?,?> build, BuildListener listener)
-                    throws InterruptedException, MacroEvaluationException, IOException {
-                this.build = build;
-                this.listener = listener;
-                this.effectiveTimeout = strategy.getTimeOut(build, listener);
-                reschedule();
+        private TimeoutTimerTask task = null;
+
+        private final long effectiveTimeout;
+
+        public EnvironmentImpl(AbstractBuild<?,?> build, BuildListener listener)
+                throws InterruptedException, MacroEvaluationException, IOException {
+            this.build = build;
+            this.listener = listener;
+            this.effectiveTimeout = strategy.getTimeOut(build, listener);
+            reschedule();
+        }
+
+        @Override
+        public void buildEnvVars(Map<String, String> env) {
+            if (timeoutEnvVar != null) {
+                env.put(timeoutEnvVar, String.valueOf(effectiveTimeout));
+            }
+        }
+
+        @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "No adequate replacement for Trigger.timer found")
+        public synchronized void reschedule() {
+            if (task != null) {
+                task.cancel();
+                // avoid memory leaks for the case where this timer is in the future (JENKINS-31627)
+                Trigger.timer.purge(); // FIXME TODO replace with Timer
+            }
+            task = new TimeoutTimerTask();
+            Trigger.timer.schedule(task, effectiveTimeout); // FIXME TODO replace with Timer
+        }
+
+        public synchronized void rescheduleIfScheduled() {
+            if (task == null) {
+                return;
+            }
+            reschedule();
+        }
+
+        @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "No adequate replacement for Trigger.timer found")
+        @Override
+        public synchronized boolean tearDown(AbstractBuild build, BuildListener listener) throws IOException, InterruptedException {
+            if (task != null) {
+                task.cancel();
+                // avoid memory leaks for the case where this timer is in the future (JENKINS-31627).
+                Trigger.timer.purge(); // FIXME TODO replace with Timer
+                task = null;
             }
 
-            @Override
-            public void buildEnvVars(Map<String, String> env) {
-                if (timeoutEnvVar != null) {
-                    env.put(timeoutEnvVar, String.valueOf(effectiveTimeout));
-                }
-            }
-
-            @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "No adequate replacement for Trigger.timer found")
-            public synchronized void reschedule() {
-                if (task != null) {
-                    task.cancel();
-                    // avoid memory leaks for the case where this timer is in the future (JENKINS-31627)
-                    Trigger.timer.purge(); // FIXME TODO replace with Timer
-                }
-                task = new TimeoutTimerTask();
-                Trigger.timer.schedule(task, effectiveTimeout); // FIXME TODO replace with Timer
-            }
-
-            public synchronized void rescheduleIfScheduled() {
-                if (task == null) {
-                    return;
-                }
-                reschedule();
-            }
-
-            @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "No adequate replacement for Trigger.timer found")
-            @Override
-            public synchronized boolean tearDown(AbstractBuild build, BuildListener listener) throws IOException, InterruptedException {
-                if (task != null) {
-                    task.cancel();
-                    // avoid memory leaks for the case where this timer is in the future (JENKINS-31627).
-                    Trigger.timer.purge(); // FIXME TODO replace with Timer
-                    task = null;
-                }
-                
-                // true to continue build.
-                return !operationFailed;
-            }
+            // true to continue build.
+            return !operationFailed;
+        }
     }
 
     @Override
@@ -218,7 +215,7 @@ public class BuildTimeoutWrapper extends BuildWrapper {
             // no need to upgrade
             return this;
         }
-        
+
         if ("elastic".equalsIgnoreCase(timeoutType)) {
             strategy = new ElasticTimeOutStrategy(timeoutPercentage,
                     timeoutMinutesElasticDefault != null ? timeoutMinutesElasticDefault : 60,
@@ -228,15 +225,15 @@ public class BuildTimeoutWrapper extends BuildWrapper {
         } else if (strategy == null) {
             strategy = new AbsoluteTimeOutStrategy(timeoutMinutes);
         }
-        
+
         List<BuildTimeOutOperation> opList = getOperationList();
         if (opList == null) {
             opList = createCompatibleOperationList(failBuild, writingDescription);
         }
-        
+
         return new BuildTimeoutWrapper(strategy, opList, timeoutEnvVar);
     }
-    
+
     @Override
     public Descriptor<BuildWrapper> getDescriptor() {
         return DESCRIPTOR;
@@ -252,11 +249,11 @@ public class BuildTimeoutWrapper extends BuildWrapper {
 
         /**
          * create a new instance form user input.
-         * 
+         *
          * Usually this is performed with {@link StaplerRequest#bindJSON(Class, JSONObject)},
          * but here it is required to construct object manually to call {@link Descriptor#newInstance(StaplerRequest, JSONObject)}
          * of downstream classes.
-         * 
+         *
          */
         @Override
         public BuildTimeoutWrapper newInstance(StaplerRequest req, JSONObject formData)
@@ -278,12 +275,12 @@ public class BuildTimeoutWrapper extends BuildWrapper {
         public List<BuildTimeOutStrategyDescriptor> getStrategies() {
             return Jenkins.getActiveInstance().getDescriptorList(BuildTimeOutStrategy.class);
         }
-        
+
         @SuppressWarnings("unchecked")
         public List<BuildTimeOutOperationDescriptor> getOperations(AbstractProject<?,?> project) {
             return BuildTimeOutOperationDescriptor.all((Class<? extends AbstractProject<?, ?>>)project.getClass());
         }
-        
+
         public List<BuildTimeOutOperationDescriptor> getOperations() {
             return BuildTimeOutOperationDescriptor.all();
         }
@@ -311,13 +308,13 @@ public class BuildTimeoutWrapper extends BuildWrapper {
                 getStrategy().onWrite(build, b, len);
                 logger.write(b, 0, len);
             }
-            
+
             @Override
             public void flush() throws IOException {
                 super.flush();
                 logger.flush();
             }
-            
+
             @Override
             public void close() throws IOException {
                 logger.close();

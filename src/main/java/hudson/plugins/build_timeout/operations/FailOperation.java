@@ -27,6 +27,9 @@ package hudson.plugins.build_timeout.operations;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
+import hudson.lifecycle.RestartNotSupportedException;
+import jenkins.model.Jenkins;
+import org.jvnet.hudson.reactor.ReactorException;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import hudson.Extension;
@@ -36,6 +39,8 @@ import hudson.model.Executor;
 import hudson.model.Result;
 import hudson.plugins.build_timeout.BuildTimeOutOperation;
 import hudson.plugins.build_timeout.BuildTimeOutOperationDescriptor;
+
+import java.io.IOException;
 
 /**
  * Fail the build.
@@ -59,7 +64,7 @@ public class FailOperation extends BuildTimeOutOperation {
         
         Executor e = build.getExecutor();
         if (e != null) {
-            e.interrupt(Result.FAILURE);
+//            e.interrupt(Result.FAILURE);
         }
         
         return true;

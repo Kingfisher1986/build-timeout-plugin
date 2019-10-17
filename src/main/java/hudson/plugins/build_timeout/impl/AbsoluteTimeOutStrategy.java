@@ -12,6 +12,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.util.Calendar;
 
 /**
  * If the build took longer than <tt>timeoutMinutes</tt> amount of minutes, it will be terminated.
@@ -37,11 +38,17 @@ public class AbsoluteTimeOutStrategy extends BuildTimeOutStrategy {
         this.timeoutMinutes = timeoutMinutes;
     }
 
+//    @Override
+//    public long getTimeOut(@Nonnull AbstractBuild<?,?> build, @Nonnull BuildListener listener)
+//            throws InterruptedException, MacroEvaluationException, IOException {
+//        return MINUTES * Math.max((int) (BuildTimeoutWrapper.MINIMUM_TIMEOUT_MILLISECONDS / MINUTES), Integer.parseInt(
+//                expandAll(build, listener, getTimeoutMinutes())));
+//    }
+
     @Override
     public long getTimeOut(@Nonnull AbstractBuild<?,?> build, @Nonnull BuildListener listener)
             throws InterruptedException, MacroEvaluationException, IOException {
-        return MINUTES * Math.max((int) (BuildTimeoutWrapper.MINIMUM_TIMEOUT_MILLISECONDS / MINUTES), Integer.parseInt(
-                expandAll(build, listener, getTimeoutMinutes())));
+        return Integer.parseInt(getTimeoutMinutes()) * 1000;
     }
 
     @Override
